@@ -476,7 +476,27 @@ export default function HumanVsAI() {
             </div>
             
             {/* 中央出牌区域 */}
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+              {/* 底牌显示 */}
+              {gameState?.gameState?.landlordPosition !== null && gameState?.gameState?.landlordCards && gameState.gameState.landlordCards.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-yellow-900/40 border-2 border-yellow-500/50 rounded-lg p-3 flex flex-col items-center"
+                >
+                  <span className="text-xs text-yellow-300 mb-2 font-bold">底牌</span>
+                  <div className="flex gap-2">
+                    {gameState.gameState.landlordCards.map((card: any, i: number) => (
+                      <PlayingCard
+                        key={i}
+                        card={{ suit: card.suit, rank: card.rank }}
+                        className="w-12 h-18"
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+              
               <div className="bg-green-800/60 rounded-xl p-8 min-w-[400px] min-h-[200px] flex flex-col items-center justify-center shadow-2xl">
                 {gameState?.gameState?.lastPlayedCards && gameState.gameState.lastPlayedCards.length > 0 ? (
                   <div className="flex gap-2">
@@ -529,12 +549,14 @@ export default function HumanVsAI() {
               </div>
               
               {/* 扇形手牌展示 */}
-              <div className="flex justify-center items-end min-h-[140px]">
-                <div className="relative flex justify-center" style={{ width: '800px', height: '120px' }}>
+              <div className="flex justify-center items-end min-h-[180px]">
+                <div className="relative flex justify-center" style={{ width: '100%', maxWidth: '1200px', height: '160px' }}>
                   {getPlayerHand(humanPosition).map((card, i) => {
                     const total = getPlayerHand(humanPosition).length;
-                    const angle = ((i - (total - 1) / 2) * 3); // 扇形角度
-                    const translateY = Math.abs(i - (total - 1) / 2) * 2; // 弧形高度
+                    // 动态调整角度，牌越多角度越小
+                    const maxAngle = Math.min(60, total * 2.5); // 最大角度
+                    const angle = ((i - (total - 1) / 2) / (total - 1)) * maxAngle;
+                    const translateY = Math.abs(i - (total - 1) / 2) * 1.5; // 弧形高度
                     
                     return (
                       <PlayingCard
