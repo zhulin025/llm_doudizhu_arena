@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { recognizePattern, canBeat, getPatternName } from "@/lib/cardValidation";
 import { motion, AnimatePresence } from "framer-motion";
 import { soundSystem } from "@/lib/sounds";
+import { sortCards, SortMode, getSortModeName, getSortModeDescription } from "@/lib/cardSorting";
 
 type Card = {
   suit: string;
@@ -24,6 +25,7 @@ export default function HumanVsAI() {
   const [selectedCards, setSelectedCards] = useState<Set<number>>(new Set());
   const [showAllHands, setShowAllHands] = useState(true); // 显示所有玩家手牌
   const [lastPlayAnimation, setLastPlayAnimation] = useState<number | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('pattern'); // 默认按牌型排序
   
   const { data: models } = trpc.models.list.useQuery();
   const startGameMutation = trpc.humanGame.start.useMutation();
@@ -162,9 +164,12 @@ export default function HumanVsAI() {
   const getHumanHand = (): Card[] | null => {
     if (!gameState) return null;
     const { gameState: gs, humanPlayerPosition: pos } = gameState;
-    if (pos === 0) return gs.hands.player0;
-    if (pos === 1) return gs.hands.player1;
-    return gs.hands.player2;
+    let hand: Card[];
+    if (pos === 0) hand = gs.hands.player0;
+    else if (pos === 1) hand = gs.hands.player1;
+    else hand = gs.hands.player2;
+    // 应用排序
+    return sortCards(hand, sortMode);
   };
   
   const getPlayerHand = (position: number): Card[] => {
@@ -547,7 +552,37 @@ export default function HumanVsAI() {
         {humanHand && (
           <Card className="bg-white/5 border-white/10">
             <CardHeader>
-              <CardTitle className="text-white">你的手牌</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white">你的手牌</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">排序方式：</span>
+                  <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
+                    <SelectTrigger className="w-32 h-8 bg-white/5 border-white/10 text-white text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rank">
+                        <div>
+                          <div className="font-medium">{getSortModeName('rank')}</div>
+                          <div className="text-xs text-gray-500">{getSortModeDescription('rank')}</div>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="suit">
+                        <div>
+                          <div className="font-medium">{getSortModeName('suit')}</div>
+                          <div className="text-xs text-gray-500">{getSortModeDescription('suit')}</div>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="pattern">
+                        <div>
+                          <div className="font-medium">{getSortModeName('pattern')}</div>
+                          <div className="text-xs text-gray-500">{getSortModeDescription('pattern')}</div>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2 mb-4">
