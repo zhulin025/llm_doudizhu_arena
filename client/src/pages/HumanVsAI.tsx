@@ -76,7 +76,8 @@ export default function HumanVsAI() {
     const hands = gameState.gameState?.hands as any;
     const hand = hands?.[`player${position}`];
     if (!hand) return [];
-    return hand.map((c: any) => ({ suit: c.suit, rank: c.rank }));
+    // 返回完整的Card对象，包含suit, rank和value
+    return hand.map((c: any) => ({ suit: c.suit, rank: c.rank, value: c.value }));
   };
   
   // 获取AI对话
