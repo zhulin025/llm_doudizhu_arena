@@ -221,6 +221,15 @@ function finalizeLandlord(state: GameState): GameState {
  * 处理出牌动作
  */
 export function processPlayAction(state: GameState, action: PlayAction): GameState {
+  console.log('[DEBUG] processPlayAction:', {
+    phase: state.phase,
+    currentPlayer: state.currentPlayer,
+    actionType: action.type,
+    lastPlayedPattern: state.lastPlayedPattern,
+    lastPlayer: state.lastPlayer,
+    consecutivePasses: state.consecutivePasses,
+  });
+  
   if (state.phase !== GamePhase.PLAYING) {
     throw new Error("Not in playing phase");
   }
@@ -245,10 +254,27 @@ export function processPlayAction(state: GameState, action: PlayAction): GameSta
       throw new Error("Invalid card pattern");
     }
     
-    // 如果不是第一个出牌，需要检查是否能压过上家
-    if (state.lastPlayedPattern !== null) {
-      if (!canBeat(pattern, state.lastPlayedPattern)) {
-        throw new Error("Cannot beat last played cards");
+    // 检查是否是新一轮（当前玩家是上次出牌的人，说明其他人都pass了）
+    const isNewRound = state.lastPlayer !== null && state.lastPlayer === currentPlayer;
+    if (isNewRound) {
+      console.log('[DEBUG] New round detected: current player is the last player who played cards');
+      // 清空上一轮的出牌记录，允许自由出牌
+      newState.lastPlayedCards = null;
+      newState.lastPlayedPattern = null;
+      newState.consecutivePasses = 0;
+    }
+    
+    // 如果不是第一个出牌且不是新一轮，需要检查是否能压过上家
+    // 注意：这里必须使用newState，因为如果是新一轮，我们已经清空了newState.lastPlayedPattern
+    if (newState.lastPlayedPattern !== null) {
+      console.log('[DEBUG] Checking if can beat:', {
+        yourPattern: pattern,
+        lastPattern: newState.lastPlayedPattern,
+        lastPlayer: newState.lastPlayer,
+        lastCards: newState.lastPlayedCards,
+      });
+      if (!canBeat(pattern, newState.lastPlayedPattern)) {
+        throw new Error(`Cannot beat last played cards. Last player (${newState.lastPlayer}) played: ${cardsToStrings(newState.lastPlayedCards || []).join(', ')}. Your cards: ${cardsToStrings(action.cards).join(', ')}`);
       }
     }
     

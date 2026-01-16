@@ -42,6 +42,13 @@ export function recognizePattern(cards: Card[]): CardPattern {
   const sorted = sortCards(cards);
   const counts = countCards(sorted);
   const uniqueValues = Array.from(counts.keys()).sort((a, b) => a - b);
+  
+  console.log('[DEBUG] recognizePattern:', {
+    cardCount: cards.length,
+    cards: cards.map(c => `${c.suit}${c.rank}`),
+    counts: Array.from(counts.entries()),
+    uniqueValues,
+  });
 
   // 火箭（双王）
   if (isRocket(sorted, counts)) {
