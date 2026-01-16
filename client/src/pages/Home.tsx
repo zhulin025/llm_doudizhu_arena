@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Gamepad2, History, TrendingUp, Settings } from "lucide-react";
+import { Gamepad2, History, TrendingUp, Settings, User } from "lucide-react";
 
 export default function Home() {
   return (
@@ -47,9 +47,23 @@ export default function Home() {
                 <div className="w-12 h-12 rounded-lg bg-purple-500/20 flex items-center justify-center mb-4">
                   <Gamepad2 className="h-6 w-6 text-purple-400" />
                 </div>
-                <CardTitle className="text-white">实时对战</CardTitle>
+                <CardTitle className="text-white">AI对战</CardTitle>
                 <CardDescription className="text-gray-400">
                   选择三个AI模型，观看它们实时进行斗地主对战
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+
+          <Link href="/human-vs-ai">
+            <Card className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <div className="w-12 h-12 rounded-lg bg-orange-500/20 flex items-center justify-center mb-4">
+                  <User className="h-6 w-6 text-orange-400" />
+                </div>
+                <CardTitle className="text-white">人机对战</CardTitle>
+                <CardDescription className="text-gray-400">
+                  亲自上场，与两个AI模型进行斗地主对决
                 </CardDescription>
               </CardHeader>
             </Card>

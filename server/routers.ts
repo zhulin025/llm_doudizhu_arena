@@ -151,6 +151,75 @@ export const appRouter = router({
         };
       }),
   }),
+
+  // 人类玩家游戏API
+  humanGame: router({
+    start: protectedProcedure
+      .input(z.object({
+        humanPlayerPosition: z.number().min(0).max(2),
+        ai1ModelId: z.number(),
+        ai2ModelId: z.number(),
+      }))
+      .mutation(async ({ input }) => {
+        const { startHumanGame } = await import("./game/humanGameManager");
+        const gameId = await startHumanGame(
+          input.humanPlayerPosition as 0 | 1 | 2,
+          input.ai1ModelId,
+          input.ai2ModelId
+        );
+        return { gameId };
+      }),
+    
+    getState: protectedProcedure
+      .input(z.object({ gameId: z.string() }))
+      .query(async ({ input }) => {
+        const { getHumanGameSession } = await import("./game/humanGameManager");
+        const session = getHumanGameSession(input.gameId);
+        if (!session) {
+          throw new Error("Game not found");
+        }
+        return {
+          gameState: session.gameState,
+          humanPlayerPosition: session.humanPlayerPosition,
+          waitingForHuman: session.waitingForHuman,
+          currentAction: session.currentAction,
+        };
+      }),
+    
+    bid: protectedProcedure
+      .input(z.object({
+        gameId: z.string(),
+        action: z.discriminatedUnion("type", [
+          z.object({ type: z.literal("bid"), amount: z.number().min(1).max(3) }),
+          z.object({ type: z.literal("pass") }),
+        ]),
+      }))
+      .mutation(async ({ input }) => {
+        const { humanBidAction } = await import("./game/humanGameManager");
+        await humanBidAction(input.gameId, input.action as any);
+        return { success: true };
+      }),
+    
+    play: protectedProcedure
+      .input(z.object({
+        gameId: z.string(),
+        action: z.discriminatedUnion("type", [
+          z.object({ 
+            type: z.literal("play"), 
+            cards: z.array(z.object({
+              suit: z.enum(["♠", "♥", "♦", "♣", "Joker"]),
+              rank: z.string(),
+            })),
+          }),
+          z.object({ type: z.literal("pass") }),
+        ]),
+      }))
+      .mutation(async ({ input }) => {
+        const { humanPlayAction } = await import("./game/humanGameManager");
+        await humanPlayAction(input.gameId, input.action as any);
+        return { success: true };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
