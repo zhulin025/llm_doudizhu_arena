@@ -1,19 +1,30 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import { Link } from "wouter";
-import { ArrowLeft, User, Bot, Sparkles, Loader2, CheckCircle2, XCircle, Brain } from "lucide-react";
+import { ArrowLeft, User, Bot, Sparkles, Loader2, Play, Pause, Send, Lightbulb } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { PlayingCard } from "@/components/PlayingCard";
+import { getHint } from "@/lib/cardHint";
 import { recognizePattern, canBeat, getPatternName } from "@/lib/cardValidation";
 import { motion, AnimatePresence } from "framer-motion";
 import { soundSystem } from "@/lib/sounds";
-import { sortCards, SortMode, getSortModeName, getSortModeDescription } from "@/lib/cardSorting";
 
 type Card = {
   suit: string;
   rank: string;
+};
+
+type MoveRecord = {
+  player: string;
+  action: string;
+  cards?: string;
+  dialogue?: string;
 };
 
 export default function HumanVsAI() {
@@ -23,43 +34,72 @@ export default function HumanVsAI() {
   const [ai1ModelId, setAi1ModelId] = useState<number | null>(null);
   const [ai2ModelId, setAi2ModelId] = useState<number | null>(null);
   const [selectedCards, setSelectedCards] = useState<Set<number>>(new Set());
-  const [showAllHands, setShowAllHands] = useState(true); // 显示所有玩家手牌
-  const [lastPlayAnimation, setLastPlayAnimation] = useState<number | null>(null);
-  const [sortMode, setSortMode] = useState<SortMode>('pattern'); // 默认按牌型排序
+  const [gameSpeed, setGameSpeed] = useState<number>(1);
+  const [isPaused, setIsPaused] = useState(false);
+  const [chatMessage, setChatMessage] = useState("");
+  const [moveHistory, setMoveHistory] = useState<MoveRecord[]>([]);
+  const [showHint, setShowHint] = useState(false);
   
   const { data: models } = trpc.models.list.useQuery();
   const startGameMutation = trpc.humanGame.start.useMutation();
   const { data: gameState, refetch: refetchGameState } = trpc.humanGame.getState.useQuery(
     { gameId: gameId! },
-    { enabled: !!gameId, refetchInterval: 1000 }
+    { enabled: !!gameId && !isPaused, refetchInterval: 1000 / gameSpeed }
   );
   const bidMutation = trpc.humanGame.bid.useMutation();
   const playMutation = trpc.humanGame.play.useMutation();
   
-  // 音效播放函数
-  const playSound = (type: 'play' | 'bid' | 'win' | 'lose' | 'pass' | 'bomb') => {
-    switch (type) {
-      case 'play':
-        soundSystem.playCard();
-        break;
-      case 'bid':
-        soundSystem.playBid();
-        break;
-      case 'win':
-        soundSystem.playWin();
-        break;
-      case 'lose':
-        soundSystem.playLose();
-        break;
-      case 'pass':
-        soundSystem.playPass();
-        break;
-      case 'bomb':
-        soundSystem.playBomb();
-        break;
+  // 获取玩家信息
+  const getPlayerInfo = (position: number) => {
+    if (!gameState) return { name: "Player", isHuman: false, modelName: "" };
+    
+    const isHuman = position === humanPosition;
+    if (isHuman) {
+      return { name: "Human", isHuman: true, modelName: "Human" };
     }
+    
+    const aiIndex = position < humanPosition ? position : position - 1;
+    const modelId = aiIndex === 0 ? ai1ModelId : ai2ModelId;
+    const model = models?.find(m => m.id === modelId);
+    return { name: model?.name || "AI", isHuman: false, modelName: model?.name || "AI" };
   };
   
+  // 获取玩家角色
+  const getPlayerRole = (position: number) => {
+    if (!gameState) return "";
+    return gameState.gameState?.landlordPosition === position ? "Landlord" : "Peasant";
+  };
+  
+  // 获取玩家手牌
+  const getPlayerHand = (position: number): Card[] => {
+    if (!gameState) return [];
+    const hands = gameState.gameState?.hands as any;
+    const hand = hands?.[`player${position}`];
+    if (!hand) return [];
+    return hand.map((c: any) => ({ suit: c.suit, rank: c.rank }));
+  };
+  
+  // 获取AI对话
+  const getAIDialogue = (position: number): string => {
+    if (!gameState || position === humanPosition) return "";
+    
+    const gameStateData = gameState.gameState as any;
+    const playHistory = gameStateData?.playHistory;
+    const lastAction = playHistory?.[playHistory?.length - 1];
+    if (!lastAction || lastAction.playerIndex !== position) return "";
+    
+    const dialogues = [
+      "看我这牌，直接炸翻你们！",
+      "我先过，队友别让我失望。",
+      "能压就压，别给地主机会。",
+      "这把稳了，等我表演。",
+      "让我想想怎么出牌...",
+    ];
+    
+    return dialogues[Math.floor(Math.random() * dialogues.length)] || "";
+  };
+  
+  // 开始游戏
   const handleStartGame = async () => {
     if (!ai1ModelId || !ai2ModelId) {
       toast.error("请选择两个AI模型");
@@ -74,12 +114,14 @@ export default function HumanVsAI() {
       });
       setGameId(result.gameId);
       setGameStarted(true);
+      setMoveHistory([]);
       toast.success("游戏开始！");
     } catch (error: any) {
       toast.error(error.message || "启动游戏失败");
     }
   };
   
+  // 叫地主
   const handleBid = async (amount?: number) => {
     if (!gameId) return;
     
@@ -89,53 +131,62 @@ export default function HumanVsAI() {
           gameId,
           action: { type: "bid", amount },
         });
-        playSound('bid');
+        soundSystem.playBid();
+        setMoveHistory(prev => [...prev, {
+          player: "Human",
+          action: `叫地主 ${amount}分`,
+        }]);
       } else {
         await bidMutation.mutateAsync({
           gameId,
           action: { type: "pass" },
         });
+        soundSystem.playPass();
+        setMoveHistory(prev => [...prev, {
+          player: "Human",
+          action: "不叫",
+        }]);
       }
       await refetchGameState();
     } catch (error: any) {
-      toast.error(error.message || "叫地主失败");
+      toast.error(error.message || "操作失败");
     }
   };
   
+  // 出牌
   const handlePlay = async () => {
     if (!gameId || selectedCards.size === 0) return;
     
-    const humanHand = getHumanHand();
-    if (!humanHand) return;
-    
-    const cardsToPlay = Array.from(selectedCards)
-      .map(index => humanHand[index])
-      .filter(Boolean) as Card[];
-    
-    // 验证出牌合法性
-    const lastPlayed = gameState?.gameState.lastPlayedCards || null;
-    const validation = canBeat(cardsToPlay, lastPlayed);
-    
-    if (!validation.valid) {
-      toast.error(validation.reason || "出牌不合法");
-      return;
-    }
+    const hand = getPlayerHand(humanPosition);
+    const cards = Array.from(selectedCards).map(i => hand[i]!);
     
     try {
       await playMutation.mutateAsync({
         gameId,
-        action: { type: "play", cards: cardsToPlay as any },
+        action: { type: "play", cards: cards as any },
       });
-      playSound('play');
+      
+      const pattern = recognizePattern(cards);
+      if (pattern && pattern.type === 'bomb') {
+        soundSystem.playBomb();
+      } else {
+        soundSystem.playCard();
+      }
+      
+      setMoveHistory(prev => [...prev, {
+        player: "Human",
+        action: "出牌",
+        cards: cards.map(c => c.rank).join(' '),
+      }]);
+      
       setSelectedCards(new Set());
-      setLastPlayAnimation(gameState?.humanPlayerPosition || 0);
-      setTimeout(() => setLastPlayAnimation(null), 1000);
       await refetchGameState();
     } catch (error: any) {
       toast.error(error.message || "出牌失败");
     }
   };
   
+  // Pass
   const handlePass = async () => {
     if (!gameId) return;
     
@@ -144,153 +195,128 @@ export default function HumanVsAI() {
         gameId,
         action: { type: "pass" },
       });
-      playSound('pass');
+      soundSystem.playPass();
+      setMoveHistory(prev => [...prev, {
+        player: "Human",
+        action: "Pass",
+      }]);
       await refetchGameState();
     } catch (error: any) {
-      toast.error(error.message || "Pass失败");
+      toast.error(error.message || "操作失败");
     }
   };
   
-  const toggleCardSelection = (index: number) => {
-    const newSelection = new Set(selectedCards);
-    if (newSelection.has(index)) {
-      newSelection.delete(index);
+  // HINT提示
+  const handleHint = () => {
+    const hand = getPlayerHand(humanPosition);
+    const lastPlayed = gameState?.gameState?.lastPlayedCards || null;
+    const hint = getHint(hand, lastPlayed);
+    
+    if (hint) {
+      toast.success(`提示: ${hint.description}`);
+      // 自动选中提示的牌
+      const indices = new Set<number>();
+      hint.cards.forEach(hintCard => {
+        const index = hand.findIndex(c => 
+          c.suit === hintCard.suit && c.rank === hintCard.rank
+        );
+        if (index !== -1) indices.add(index);
+      });
+      setSelectedCards(indices);
     } else {
-      newSelection.add(index);
+      toast.info("建议Pass");
     }
-    setSelectedCards(newSelection);
   };
   
-  const getHumanHand = (): Card[] | null => {
-    if (!gameState) return null;
-    const { gameState: gs, humanPlayerPosition: pos } = gameState;
-    let hand: Card[];
-    if (pos === 0) hand = gs.hands.player0;
-    else if (pos === 1) hand = gs.hands.player1;
-    else hand = gs.hands.player2;
-    // 应用排序
-    return sortCards(hand, sortMode);
+  // 发送聊天消息
+  const handleSendMessage = () => {
+    if (!chatMessage.trim()) return;
+    setMoveHistory(prev => [...prev, {
+      player: "Human",
+      action: "聊天",
+      dialogue: chatMessage,
+    }]);
+    setChatMessage("");
   };
   
-  const getPlayerHand = (position: number): Card[] => {
-    if (!gameState) return [];
-    const { gameState: gs } = gameState;
-    if (position === 0) return gs.hands.player0;
-    if (position === 1) return gs.hands.player1;
-    return gs.hands.player2;
+  // 选牌
+  const toggleCardSelection = (index: number) => {
+    setSelectedCards(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
   };
   
-  const getPlayerName = (position: number): string => {
-    if (!gameState) return `玩家${position}`;
-    if (position === gameState.humanPlayerPosition) return "你";
-    return `AI ${position}`;
-  };
-  
-  const getCardDisplay = (card: Card): string => {
-    if (card.suit === "Joker") {
-      return card.rank === "小王" ? "🃏" : "🃟";
-    }
-    return `${card.suit}${card.rank}`;
-  };
-  
-  const isMyTurn = (): boolean => {
-    if (!gameState) return false;
-    const { gameState: gs, humanPlayerPosition, waitingForHuman } = gameState;
-    if (!waitingForHuman) return false;
+  // 获取选中牌的验证信息
+  const getSelectionValidation = () => {
+    if (selectedCards.size === 0) return null;
     
-    if (String(gs.phase) === "BIDDING") {
-      return gs.currentBidder === humanPlayerPosition;
-    } else if (String(gs.phase) === "PLAYING") {
-      return gs.currentPlayer === humanPlayerPosition;
-    }
-    return false;
-  };
-  
-  const isAIThinking = (): boolean => {
-    if (!gameState) return false;
-    const { gameState: gs, humanPlayerPosition, waitingForHuman } = gameState;
-    if (waitingForHuman) return false;
+    const hand = getPlayerHand(humanPosition);
+    const cards = Array.from(selectedCards).map(i => hand[i]!);
+    const pattern = recognizePattern(cards);
     
-    if (String(gs.phase) === "BIDDING") {
-      return gs.currentBidder !== humanPlayerPosition;
-    } else if (String(gs.phase) === "PLAYING") {
-      return gs.currentPlayer !== humanPlayerPosition;
-    }
-    return false;
-  };
-  
-  // 获取当前选中牌的验证结果
-  const getSelectedCardsValidation = () => {
-    if (selectedCards.size === 0) {
-      return { valid: false, pattern: null, canBeatLast: null };
+    if (!pattern) {
+      return { valid: false, message: "不是有效牌型" };
     }
     
-    const humanHand = getHumanHand();
-    if (!humanHand) return { valid: false, pattern: null, canBeatLast: null };
+    const lastPlayed = gameState?.gameState?.lastPlayedCards;
+    if (lastPlayed && lastPlayed.length > 0) {
+      const canBeatLast = canBeat(cards, lastPlayed);
+      if (!canBeatLast) {
+        return { valid: false, message: `${getPatternName(pattern)} - 无法压过上家` };
+      }
+    }
     
-    const cardsToPlay = Array.from(selectedCards)
-      .map(index => humanHand[index])
-      .filter(Boolean) as Card[];
-    
-    const pattern = recognizePattern(cardsToPlay);
-    const lastPlayed = gameState?.gameState.lastPlayedCards || null;
-    const validation = canBeat(cardsToPlay, lastPlayed);
-    
-    return {
-      valid: pattern.type !== 'INVALID',
-      pattern,
-      canBeatLast: validation
-    };
+    return { valid: true, message: getPatternName(pattern) };
   };
   
+  const validation = getSelectionValidation();
+  const isHumanTurn = gameState?.gameState?.currentPlayer === humanPosition;
+  const isBiddingPhase = gameState?.gameState?.phase === "bidding";
+  const isPlayingPhase = gameState?.gameState?.phase === "playing";
+  
+  // 配置界面
   if (!gameStarted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        <header className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
-          <div className="container mx-auto px-4 py-4">
-            <div className="flex items-center gap-4">
-              <Link href="/">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  返回首页
-                </Button>
-              </Link>
-              <div>
-                <h1 className="text-xl font-bold text-white">人机对战</h1>
-                <p className="text-xs text-gray-400">挑战AI模型</p>
-              </div>
-            </div>
-          </div>
-        </header>
-        
-        <main className="container mx-auto px-4 py-8">
-          <Card className="max-w-2xl mx-auto bg-white/5 border-white/10">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+        <div className="max-w-4xl mx-auto">
+          <Link href="/">
+            <Button variant="ghost" className="mb-6">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              返回首页
+            </Button>
+          </Link>
+          
+          <Card className="bg-slate-800/50 border-slate-700">
             <CardHeader>
-              <CardTitle className="text-white">配置对战</CardTitle>
+              <h1 className="text-3xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                人机对战配置
+              </h1>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  你的位置
-                </label>
+                <label className="block text-sm font-medium mb-2 text-slate-300">您的位置</label>
                 <Select value={humanPosition.toString()} onValueChange={(v) => setHumanPosition(parseInt(v))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">玩家0（先手）</SelectItem>
-                    <SelectItem value="1">玩家1</SelectItem>
-                    <SelectItem value="2">玩家2</SelectItem>
+                    <SelectItem value="0">位置 0 (底部)</SelectItem>
+                    <SelectItem value="1">位置 1 (左上)</SelectItem>
+                    <SelectItem value="2">位置 2 (右上)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  AI对手1
-                </label>
-                <Select value={ai1ModelId?.toString() || ""} onValueChange={(v) => setAi1ModelId(parseInt(v))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <label className="block text-sm font-medium mb-2 text-slate-300">AI对手 1</label>
+                <Select value={ai1ModelId?.toString()} onValueChange={(v) => setAi1ModelId(parseInt(v))}>
+                  <SelectTrigger>
                     <SelectValue placeholder="选择AI模型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -304,11 +330,9 @@ export default function HumanVsAI() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  AI对手2
-                </label>
-                <Select value={ai2ModelId?.toString() || ""} onValueChange={(v) => setAi2ModelId(parseInt(v))}>
-                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <label className="block text-sm font-medium mb-2 text-slate-300">AI对手 2</label>
+                <Select value={ai2ModelId?.toString()} onValueChange={(v) => setAi2ModelId(parseInt(v))}>
+                  <SelectTrigger>
                     <SelectValue placeholder="选择AI模型" />
                   </SelectTrigger>
                   <SelectContent>
@@ -324,346 +348,323 @@ export default function HumanVsAI() {
               <Button 
                 onClick={handleStartGame} 
                 className="w-full"
-                disabled={!ai1ModelId || !ai2ModelId || startGameMutation.isPending}
+                disabled={!ai1ModelId || !ai2ModelId}
               >
-                {startGameMutation.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    启动中...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    开始游戏
-                  </>
-                )}
+                <Play className="mr-2 h-4 w-4" />
+                开始游戏
               </Button>
             </CardContent>
           </Card>
-        </main>
+        </div>
       </div>
     );
   }
   
-  if (!gameState) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-white" />
-      </div>
-    );
-  }
-  
-  const humanHand = getHumanHand();
-  const { gameState: gs, humanPlayerPosition, waitingForHuman } = gameState;
-  const myTurn = isMyTurn();
-  const aiThinking = isAIThinking();
-  const validation = getSelectedCardsValidation();
-  
+  // 游戏界面 - 3D桌面视角
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <header className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  返回
-                </Button>
-              </Link>
-              <div>
-                <h1 className="text-xl font-bold text-white">人机对战</h1>
-                <p className="text-xs text-gray-400">
-                  {String(gs.phase) === "BIDDING" && "叫地主阶段"}
-                  {String(gs.phase) === "PLAYING" && "出牌阶段"}
-                  {String(gs.phase) === "FINISHED" && "游戏结束"}
-                </p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-4">
+      <div className="max-w-[1800px] mx-auto grid grid-cols-[1fr_400px] gap-4 h-[calc(100vh-2rem)]">
+        {/* 左侧：3D游戏桌面 */}
+        <div className="relative bg-gradient-to-br from-slate-800/80 to-slate-900/80 rounded-xl border border-slate-700 overflow-hidden">
+          {/* 3D桌面背景 */}
+          <div className="absolute inset-0 bg-gradient-to-b from-blue-900/20 to-green-900/40" style={{
+            clipPath: 'polygon(0 10%, 100% 0, 100% 100%, 0 90%)'
+          }} />
+          
+          {/* 游戏桌面 */}
+          <div className="relative h-full flex flex-col">
+            {/* 顶部玩家区域 */}
+            <div className="flex justify-around items-start p-4 h-1/3">
+              {/* 左上玩家 */}
+              {humanPosition !== 1 && (
+                <div className="flex flex-col items-center space-y-2">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-slate-700 border-4 border-blue-500 flex items-center justify-center">
+                      <Bot className="w-8 h-8 text-blue-400" />
+                    </div>
+                    {getPlayerRole(1) === "Landlord" && (
+                      <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
+                        地主
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-sm font-medium text-slate-300">{getPlayerInfo(1).modelName}</span>
+                  
+                  {/* AI对话气泡 */}
+                  {gameState?.gameState?.currentPlayer === 1 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-white/90 rounded-lg p-2 max-w-xs text-xs text-slate-800 shadow-lg"
+                    >
+                      {getAIDialogue(1) || "思考中..."}
+                      <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-white/90" />
+                    </motion.div>
+                  )}
+                  
+                  {/* 手牌（背面） */}
+                  <div className="flex gap-[-20px]">
+                    {getPlayerHand(1).map((_, i) => (
+                      <PlayingCard
+                        key={i}
+                        card={{ suit: '', rank: '' }}
+                        faceDown
+                        disabled
+                        className="w-12 h-18"
+                        style={{ marginLeft: i > 0 ? '-20px' : '0' }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-slate-400">剩余 {getPlayerHand(1).length} 张</span>
+                </div>
+              )}
+              
+              {/* 右上玩家 */}
+              {humanPosition !== 2 && (
+                <div className="flex flex-col items-center space-y-2">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-slate-700 border-4 border-purple-500 flex items-center justify-center">
+                      <Bot className="w-8 h-8 text-purple-400" />
+                    </div>
+                    {getPlayerRole(2) === "Landlord" && (
+                      <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
+                        地主
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-sm font-medium text-slate-300">{getPlayerInfo(2).modelName}</span>
+                  
+                  {/* AI对话气泡 */}
+                  {gameState?.gameState?.currentPlayer === 2 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-white/90 rounded-lg p-2 max-w-xs text-xs text-slate-800 shadow-lg"
+                    >
+                      {getAIDialogue(2) || "思考中..."}
+                      <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-white/90" />
+                    </motion.div>
+                  )}
+                  
+                  {/* 手牌（背面） */}
+                  <div className="flex gap-[-20px]">
+                    {getPlayerHand(2).map((_, i) => (
+                      <PlayingCard
+                        key={i}
+                        card={{ suit: '', rank: '' }}
+                        faceDown
+                        disabled
+                        className="w-12 h-18"
+                        style={{ marginLeft: i > 0 ? '-20px' : '0' }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-xs text-slate-400">剩余 {getPlayerHand(2).length} 张</span>
+                </div>
+              )}
+            </div>
+            
+            {/* 中央出牌区域 */}
+            <div className="flex-1 flex items-center justify-center">
+              <div className="bg-green-800/60 rounded-xl p-8 min-w-[400px] min-h-[200px] flex flex-col items-center justify-center shadow-2xl">
+                {gameState?.gameState?.lastPlayedCards && gameState.gameState.lastPlayedCards.length > 0 ? (
+                  <div className="flex gap-2">
+                    {gameState.gameState.lastPlayedCards.map((card: any, i: number) => (
+                      <PlayingCard
+                        key={i}
+                        card={{ suit: card.suit, rank: card.rank }}
+                        className="w-16 h-24"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-slate-400 text-lg">等待出牌...</span>
+                )}
+                
+                {gameState?.gameState?.currentPlayer !== undefined && (
+                  <div className="mt-4 text-center">
+                    <span className="text-sm text-slate-300">
+                      当前玩家: {getPlayerInfo(gameState.gameState.currentPlayer).modelName}
+                    </span>
+                    {gameState.gameState.currentPlayer !== humanPosition && (
+                      <div className="flex items-center justify-center mt-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-400 mr-2" />
+                        <span className="text-xs text-blue-400">AI思考中...</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             
-            <div className="flex items-center gap-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAllHands(!showAllHands)}
-              >
-                {showAllHands ? "隐藏" : "显示"}所有手牌
-              </Button>
-              <div className="text-right">
-                <div className="text-sm text-gray-400">回合 {gs.roundNumber}</div>
-                {myTurn && (
-                  <div className="text-sm text-green-400 font-medium">轮到你了！</div>
+            {/* 底部人类玩家区域 */}
+            <div className="p-4 space-y-4">
+              {/* 玩家信息 */}
+              <div className="flex items-center justify-center space-x-4">
+                <div className="relative">
+                  <div className="w-16 h-16 rounded-full bg-slate-700 border-4 border-green-500 flex items-center justify-center">
+                    <User className="w-8 h-8 text-green-400" />
+                  </div>
+                  {getPlayerRole(humanPosition) === "Landlord" && (
+                    <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
+                      地主
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="text-lg font-bold text-white">Human</span>
+                  <div className="text-sm text-slate-400">剩余 {getPlayerHand(humanPosition).length} 张</div>
+                </div>
+              </div>
+              
+              {/* 扇形手牌展示 */}
+              <div className="flex justify-center items-end min-h-[140px]">
+                <div className="relative flex justify-center" style={{ width: '800px', height: '120px' }}>
+                  {getPlayerHand(humanPosition).map((card, i) => {
+                    const total = getPlayerHand(humanPosition).length;
+                    const angle = ((i - (total - 1) / 2) * 3); // 扇形角度
+                    const translateY = Math.abs(i - (total - 1) / 2) * 2; // 弧形高度
+                    
+                    return (
+                      <PlayingCard
+                        key={i}
+                        card={card}
+                        selected={selectedCards.has(i)}
+                        onClick={() => isHumanTurn && isPlayingPhase && toggleCardSelection(i)}
+                        disabled={!isHumanTurn || !isPlayingPhase}
+                        className="absolute bottom-0"
+                        style={{
+                          left: `${(i / (total - 1)) * 100}%`,
+                          transform: `translateX(-50%) rotate(${angle}deg) translateY(${translateY}px) ${selectedCards.has(i) ? 'translateY(-20px)' : ''}`,
+                          transformOrigin: 'bottom center',
+                          zIndex: selectedCards.has(i) ? 100 : i,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+              
+              {/* 操作按钮 */}
+              <div className="flex justify-center items-center space-x-4">
+                {isBiddingPhase && isHumanTurn && (
+                  <>
+                    <Button onClick={() => handleBid(1)} variant="outline">叫1分</Button>
+                    <Button onClick={() => handleBid(2)} variant="outline">叫2分</Button>
+                    <Button onClick={() => handleBid(3)} variant="outline">叫3分</Button>
+                    <Button onClick={() => handleBid()} variant="ghost">不叫</Button>
+                  </>
                 )}
-                {aiThinking && (
-                  <div className="text-sm text-blue-400 font-medium flex items-center gap-1">
-                    <Brain className="h-3 w-3 animate-pulse" />
-                    AI思考中...
+                
+                {isPlayingPhase && isHumanTurn && (
+                  <>
+                    <Button onClick={handleHint} variant="outline" className="bg-yellow-500/20 hover:bg-yellow-500/30">
+                      <Lightbulb className="mr-2 h-4 w-4" />
+                      HINT
+                    </Button>
+                    <Button onClick={handlePass} variant="outline">
+                      PASS
+                    </Button>
+                    <Button 
+                      onClick={handlePlay} 
+                      disabled={selectedCards.size === 0 || !validation?.valid}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <Play className="mr-2 h-4 w-4" />
+                      PLAY
+                    </Button>
+                  </>
+                )}
+                
+                {validation && (
+                  <div className={`px-4 py-2 rounded-lg ${validation.valid ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {validation.message}
                   </div>
                 )}
               </div>
             </div>
           </div>
         </div>
-      </header>
-      
-      <main className="container mx-auto px-4 py-8">
-        {/* 所有玩家信息和手牌 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          {[0, 1, 2].map((pos) => {
-            const isHuman = pos === humanPlayerPosition;
-            const isCurrent = String(gs.phase) === "BIDDING" ? gs.currentBidder === pos : gs.currentPlayer === pos;
-            const hand = getPlayerHand(pos);
-            const isLandlord = gs.landlordPosition === pos;
-            const isAnimating = lastPlayAnimation === pos;
-            
-            return (
-              <motion.div
-                key={pos}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: pos * 0.1 }}
-              >
-                <Card className={`bg-white/5 border-white/10 ${isCurrent ? 'ring-2 ring-blue-500' : ''} ${isAnimating ? 'ring-2 ring-green-500' : ''}`}>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {isHuman ? <User className="h-5 w-5 text-blue-400" /> : <Bot className="h-5 w-5 text-purple-400" />}
-                        <span className="text-white font-medium">{getPlayerName(pos)}</span>
-                        {isLandlord && <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">地主</span>}
-                        {isCurrent && <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded">当前</span>}
-                      </div>
-                      <div className="text-gray-400 text-sm">{hand.length}张</div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {showAllHands && (
-                      <div className="flex flex-wrap gap-1">
-                        {hand.map((card, idx) => (
-                          <motion.div
-                            key={idx}
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ delay: idx * 0.02 }}
-                            className="bg-white text-black px-2 py-1 rounded text-xs font-bold"
-                          >
-                            {getCardDisplay(card)}
-                          </motion.div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </motion.div>
-            );
-          })}
-        </div>
         
-        {/* 叫地主界面 */}
-        {String(gs.phase) === "BIDDING" && myTurn && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
-            <Card className="mb-8 bg-white/5 border-white/10">
-              <CardHeader>
-                <CardTitle className="text-white">叫地主</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-4">
-                  <Button onClick={() => handleBid()} variant="outline" disabled={bidMutation.isPending}>
-                    不叫
-                  </Button>
-                  {[1, 2, 3].map((amount) => (
-                    <Button 
-                      key={amount}
-                      onClick={() => handleBid(amount)}
-                      disabled={bidMutation.isPending || amount <= (gs.highestBid || 0)}
-                    >
-                      叫{amount}分
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-        
-        {/* 出牌历史 */}
-        {String(gs.phase) === "PLAYING" && gs.lastPlayedCards && gs.lastPlayedCards.length > 0 && (
-          <AnimatePresence>
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <Card className="mb-8 bg-white/5 border-white/10">
-                <CardHeader>
-                  <CardTitle className="text-white text-sm">上次出牌</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-2">
-                    {gs.lastPlayedCards.map((card, idx) => (
-                      <motion.div
-                        key={idx}
-                        initial={{ scale: 0, rotate: -180 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="bg-white text-black px-3 py-2 rounded text-lg font-bold"
-                      >
-                        {getCardDisplay(card)}
-                      </motion.div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </AnimatePresence>
-        )}
-        
-        {/* 选牌验证提示 */}
-        {selectedCards.size > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <Card className={`mb-4 ${validation.canBeatLast?.valid ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  {validation.canBeatLast?.valid ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-400" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-400" />
-                  )}
-                  <div>
-                    <div className={`font-medium ${validation.canBeatLast?.valid ? 'text-green-300' : 'text-red-300'}`}>
-                      {validation.valid ? getPatternName(validation.pattern!) : '无效牌型'}
-                    </div>
-                    {!validation.canBeatLast?.valid && validation.canBeatLast?.reason && (
-                      <div className="text-sm text-red-400">{validation.canBeatLast.reason}</div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-        
-        {/* 手牌 */}
-        {humanHand && (
-          <Card className="bg-white/5 border-white/10">
-            <CardHeader>
+        {/* 右侧：信息面板 */}
+        <div className="flex flex-col space-y-4">
+          {/* 游戏控制 */}
+          <Card className="bg-slate-800/80 border-slate-700">
+            <CardContent className="p-4 space-y-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-white">你的手牌</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-400">排序方式：</span>
-                  <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
-                    <SelectTrigger className="w-32 h-8 bg-white/5 border-white/10 text-white text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rank">
-                        <div>
-                          <div className="font-medium">{getSortModeName('rank')}</div>
-                          <div className="text-xs text-gray-500">{getSortModeDescription('rank')}</div>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="suit">
-                        <div>
-                          <div className="font-medium">{getSortModeName('suit')}</div>
-                          <div className="text-xs text-gray-500">{getSortModeDescription('suit')}</div>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="pattern">
-                        <div>
-                          <div className="font-medium">{getSortModeName('pattern')}</div>
-                          <div className="text-xs text-gray-500">{getSortModeDescription('pattern')}</div>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {humanHand.map((card, index) => (
-                  <motion.button
-                    key={index}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => toggleCardSelection(index)}
-                    className={`px-4 py-3 rounded text-lg font-bold transition-all ${
-                      selectedCards.has(index)
-                        ? 'bg-blue-500 text-white transform -translate-y-2 shadow-lg'
-                        : 'bg-white text-black hover:bg-gray-200'
-                    }`}
-                    disabled={!myTurn || String(gs.phase) !== "PLAYING"}
-                  >
-                    {getCardDisplay(card)}
-                  </motion.button>
-                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsPaused(!isPaused)}
+                >
+                  {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                </Button>
+                <span className="text-sm text-slate-400">
+                  Turn {moveHistory.length}
+                </span>
               </div>
               
-              {String(gs.phase) === "PLAYING" && myTurn && (
-                <div className="flex gap-4">
-                  <Button 
-                    onClick={handlePlay}
-                    disabled={selectedCards.size === 0 || playMutation.isPending || !validation.canBeatLast?.valid}
-                  >
-                    {playMutation.isPending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        出牌中...
-                      </>
-                    ) : (
-                      '出牌'
-                    )}
-                  </Button>
-                  <Button 
-                    onClick={handlePass}
-                    variant="outline"
-                    disabled={playMutation.isPending || gs.consecutivePasses === 0}
-                  >
-                    不出
-                  </Button>
+              <div className="space-y-2">
+                <label className="text-xs text-slate-400">Game Speed</label>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-slate-500">x0.125</span>
+                  <Slider
+                    value={[Math.log2(gameSpeed) + 3]}
+                    onValueChange={([v]) => setGameSpeed(Math.pow(2, v! - 3))}
+                    min={0}
+                    max={6}
+                    step={1}
+                    className="flex-1"
+                  />
+                  <span className="text-xs text-slate-500">x8</span>
                 </div>
-              )}
+                <div className="text-center text-sm text-slate-300">x{gameSpeed}</div>
+              </div>
             </CardContent>
           </Card>
-        )}
-        
-        {/* 游戏结束 */}
-        {String(gs.phase) === "FINISHED" && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-          >
-            <Card className="mt-8 bg-white/5 border-white/10">
-              <CardHeader>
-                <CardTitle className="text-white">游戏结束</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", duration: 0.5 }}
-                    className="text-3xl font-bold text-white mb-4"
-                  >
-                    {gs.winner === humanPlayerPosition ? "🎉 你赢了！" : "😢 你输了"}
-                  </motion.div>
-                  <div className="text-gray-400 mb-6">
-                    获胜者: {getPlayerName(gs.winner!)} ({gs.winnerType === "landlord" ? "地主" : "农民"})
-                  </div>
-                  <Link href="/">
-                    <Button>返回首页</Button>
-                  </Link>
+          
+          {/* Move History */}
+          <Card className="bg-slate-800/80 border-slate-700 flex-1">
+            <CardContent className="p-4 h-full flex flex-col">
+              <h3 className="text-lg font-semibold mb-4 text-slate-200">Move History</h3>
+              <ScrollArea className="flex-1">
+                <div className="space-y-2">
+                  {moveHistory.map((move, i) => (
+                    <div key={i} className="text-sm p-2 bg-slate-700/50 rounded">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-300">{i + 1}. {move.player}</span>
+                        <span className="text-slate-400">{move.cards || move.action}</span>
+                      </div>
+                      {move.dialogue && (
+                        <div className="text-xs text-slate-500 italic mt-1">"{move.dialogue}"</div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </main>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+          
+          {/* Table Talk */}
+          <Card className="bg-slate-800/80 border-slate-700">
+            <CardContent className="p-4">
+              <h3 className="text-sm font-semibold mb-2 text-slate-200">Table Talk</h3>
+              <div className="flex space-x-2">
+                <Input
+                  value={chatMessage}
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Send anytime"
+                  className="flex-1 bg-slate-700/50 border-slate-600"
+                />
+                <Button onClick={handleSendMessage} size="sm">
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
