@@ -222,12 +222,29 @@ export function countCards(cards: Card[]): Map<number, number> {
  * 检查手牌中是否包含指定的牌
  */
 export function hasCards(hand: Card[], cards: Card[]): boolean {
-  const handCounts = countCards(hand);
-  const cardCounts = countCards(cards);
+  // 使用suit+rank来比较，而不是value
+  const handCardIds = hand.map(c => `${c.suit}-${c.rank}`);
+  const cardIds = cards.map(c => `${c.suit}-${c.rank}`);
   
-  for (const value of Array.from(cardCounts.keys())) {
-    const count = cardCounts.get(value)!;
-    if ((handCounts.get(value) || 0) < count) {
+  console.log('[DEBUG] hasCards:', {
+    hand: hand.map(c => ({ suit: c.suit, rank: c.rank, value: c.value })),
+    cards: cards.map(c => ({ suit: c.suit, rank: c.rank, value: c.value })),
+    handCardIds,
+    cardIds,
+  });
+  
+  // 统计每种牌ID的数量
+  const handCounts = new Map<string, number>();
+  handCardIds.forEach(id => handCounts.set(id, (handCounts.get(id) || 0) + 1));
+  
+  const cardCounts = new Map<string, number>();
+  cardIds.forEach(id => cardCounts.set(id, (cardCounts.get(id) || 0) + 1));
+  
+  // 检查每种牌ID的数量是否足够
+  for (const [cardId, needCount] of Array.from(cardCounts.entries())) {
+    const haveCount = handCounts.get(cardId) || 0;
+    if (haveCount < needCount) {
+      console.log(`[DEBUG] hasCards FAILED: cardId=${cardId}, need=${needCount}, have=${haveCount}`);
       return false;
     }
   }
@@ -240,13 +257,20 @@ export function hasCards(hand: Card[], cards: Card[]): boolean {
  */
 export function removeCards(hand: Card[], cards: Card[]): Card[] {
   const result = [...hand];
-  const cardCounts = countCards(cards);
   
-  for (const value of Array.from(cardCounts.keys())) {
-    const count = cardCounts.get(value)!;
+  // 统计需要移除的牌ID
+  const cardCounts = new Map<string, number>();
+  cards.forEach(c => {
+    const id = `${c.suit}-${c.rank}`;
+    cardCounts.set(id, (cardCounts.get(id) || 0) + 1);
+  });
+  
+  // 从后往前移除匹配的牌
+  for (const [cardId, count] of Array.from(cardCounts.entries())) {
     let removed = 0;
     for (let i = result.length - 1; i >= 0 && removed < count; i--) {
-      if (result[i]!.value === value) {
+      const id = `${result[i]!.suit}-${result[i]!.rank}`;
+      if (id === cardId) {
         result.splice(i, 1);
         removed++;
       }

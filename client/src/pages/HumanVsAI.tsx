@@ -18,6 +18,7 @@ import { soundSystem } from "@/lib/sounds";
 type Card = {
   suit: string;
   rank: string;
+  value?: number; // 可选，用于后端验证
 };
 
 type MoveRecord = {
@@ -33,7 +34,7 @@ export default function HumanVsAI() {
   const [humanPosition, setHumanPosition] = useState<number>(0);
   const [ai1ModelId, setAi1ModelId] = useState<number | null>(null);
   const [ai2ModelId, setAi2ModelId] = useState<number | null>(null);
-  const [selectedCards, setSelectedCards] = useState<Set<number>>(new Set());
+  const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set()); // 存储牌的唯一标识：suit+rank
   const [gameSpeed, setGameSpeed] = useState<number>(1);
   const [isPaused, setIsPaused] = useState(false);
   const [chatMessage, setChatMessage] = useState("");
@@ -158,8 +159,18 @@ export default function HumanVsAI() {
   const handlePlay = async () => {
     if (!gameId || selectedCards.size === 0) return;
     
+    // 先刷新游戏状态，确保使用最新的手牌数据
+    await refetchGameState();
+    
     const hand = getPlayerHand(humanPosition);
-    const cards = Array.from(selectedCards).map(i => hand[i]!);
+    const cards = hand.filter(card => selectedCards.has(`${card.suit}-${card.rank}`));
+    
+    console.log('[DEBUG] handlePlay:', {
+      humanPosition,
+      selectedCardIds: Array.from(selectedCards),
+      hand: hand.map(c => ({ suit: c.suit, rank: c.rank, value: c.value })),
+      cards: cards.map(c => ({ suit: c.suit, rank: c.rank, value: c.value })),
+    });
     
     try {
       await playMutation.mutateAsync({
@@ -211,19 +222,17 @@ export default function HumanVsAI() {
   const handleHint = () => {
     const hand = getPlayerHand(humanPosition);
     const lastPlayed = gameState?.gameState?.lastPlayedCards || null;
-    const hint = getHint(hand, lastPlayed);
+    const hint = getHint(hand as any, lastPlayed);
     
     if (hint) {
       toast.success(`提示: ${hint.description}`);
       // 自动选中提示的牌
-      const indices = new Set<number>();
+      const cardIds = new Set<string>();
       hint.cards.forEach(hintCard => {
-        const index = hand.findIndex(c => 
-          c.suit === hintCard.suit && c.rank === hintCard.rank
-        );
-        if (index !== -1) indices.add(index);
+        const cardId = `${hintCard.suit}-${hintCard.rank}`;
+        cardIds.add(cardId);
       });
-      setSelectedCards(indices);
+      setSelectedCards(cardIds);
     } else {
       toast.info("建议Pass");
     }
@@ -241,13 +250,14 @@ export default function HumanVsAI() {
   };
   
   // 选牌
-  const toggleCardSelection = (index: number) => {
+  const toggleCardSelection = (card: Card) => {
+    const cardId = `${card.suit}-${card.rank}`;
     setSelectedCards(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(index)) {
-        newSet.delete(index);
+      if (newSet.has(cardId)) {
+        newSet.delete(cardId);
       } else {
-        newSet.add(index);
+        newSet.add(cardId);
       }
       return newSet;
     });
@@ -258,7 +268,7 @@ export default function HumanVsAI() {
     if (selectedCards.size === 0) return null;
     
     const hand = getPlayerHand(humanPosition);
-    const cards = Array.from(selectedCards).map(i => hand[i]!);
+    const cards = hand.filter(card => selectedCards.has(`${card.suit}-${card.rank}`));
     const pattern = recognizePattern(cards);
     
     if (!pattern) {
@@ -530,15 +540,15 @@ export default function HumanVsAI() {
                       <PlayingCard
                         key={i}
                         card={card}
-                        selected={selectedCards.has(i)}
-                        onClick={() => isHumanTurn && isPlayingPhase && toggleCardSelection(i)}
+                        selected={selectedCards.has(`${card.suit}-${card.rank}`)}
+                        onClick={() => isHumanTurn && isPlayingPhase && toggleCardSelection(card)}
                         disabled={!isHumanTurn || !isPlayingPhase}
                         className="absolute bottom-0"
                         style={{
                           left: `${(i / (total - 1)) * 100}%`,
-                          transform: `translateX(-50%) rotate(${angle}deg) translateY(${translateY}px) ${selectedCards.has(i) ? 'translateY(-20px)' : ''}`,
+                          transform: `translateX(-50%) rotate(${angle}deg) translateY(${translateY}px) ${selectedCards.has(`${card.suit}-${card.rank}`) ? 'translateY(-20px)' : ''}`,
                           transformOrigin: 'bottom center',
-                          zIndex: selectedCards.has(i) ? 100 : i,
+                          zIndex: selectedCards.has(`${card.suit}-${card.rank}`) ? 100 : i,
                         }}
                       />
                     );

@@ -399,6 +399,13 @@ export async function humanPlayAction(gameId: string, action: PlayAction): Promi
     throw new Error("Not human player's turn");
   }
   
+  // 调试日志
+  console.log('[DEBUG] humanPlayAction:', {
+    currentPlayer,
+    hand: getPlayerHand(state, currentPlayer).map(c => ({ suit: c.suit, rank: c.rank, value: c.value })),
+    actionCards: action.type === 'play' ? action.cards?.map(c => ({ suit: c.suit, rank: c.rank, value: (c as any).value })) : null,
+  });
+  
   // 处理人类玩家动作
   const newState = processPlayAction(state, action);
   session.gameState = newState;

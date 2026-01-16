@@ -123,6 +123,8 @@
 - [x] 添加游戏暂停/继续功能
 
 ## Bug修复
-- [x] 修复"Player does not have these cards"错误
+- [x] 修复"Player does not have these cards"错误（重构选牌逻辑）
 - [x] 确保前端手牌数据与后端一致
 - [x] 验证出牌时的牌面匹配逻辑
+- [x] 修改选牌逻辑为存储牌对象ID而非索引
+- [x] 修改hasCards和removeCards使用suit+rank匹配而非value
