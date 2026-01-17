@@ -388,18 +388,18 @@ export default function HumanVsAI() {
             <div className="flex justify-around items-start p-4 h-1/3">
               {/* 左上玩家 */}
               {humanPosition !== 1 && (
-                <div className="flex flex-col items-center space-y-2">
+                <div className="flex flex-col items-center space-y-1.5">
                   <div className="relative">
-                    <div className="w-16 h-16 rounded-full bg-slate-700 border-4 border-blue-500 flex items-center justify-center">
-                      <Bot className="w-8 h-8 text-blue-400" />
+                    <div className="w-12 h-12 rounded-full bg-slate-700 border-3 border-blue-500 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-blue-400" />
                     </div>
                     {getPlayerRole(1) === "Landlord" && (
-                      <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
+                      <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
                         地主
                       </div>
                     )}
                   </div>
-                  <span className="text-sm font-medium text-slate-300">{getPlayerInfo(1).modelName}</span>
+                  <span className="text-xs font-medium text-slate-300">{getPlayerInfo(1).modelName}</span>
                   
                   {/* AI对话气泡 */}
                   {gameState?.gameState?.currentPlayer === 1 && (
@@ -414,15 +414,15 @@ export default function HumanVsAI() {
                   )}
                   
                   {/* 手牌（背面） */}
-                  <div className="flex gap-[-20px]">
+                  <div className="flex">
                     {getPlayerHand(1).map((_, i) => (
                       <PlayingCard
                         key={i}
                         card={{ suit: '', rank: '' }}
                         faceDown
                         disabled
-                        className="w-12 h-18"
-                        style={{ marginLeft: i > 0 ? '-20px' : '0' }}
+                        className="w-10 h-14"
+                        style={{ marginLeft: i > 0 ? '-28px' : '0' }}
                       />
                     ))}
                   </div>
@@ -432,18 +432,18 @@ export default function HumanVsAI() {
               
               {/* 右上玩家 */}
               {humanPosition !== 2 && (
-                <div className="flex flex-col items-center space-y-2">
+                <div className="flex flex-col items-center space-y-1.5">
                   <div className="relative">
-                    <div className="w-16 h-16 rounded-full bg-slate-700 border-4 border-purple-500 flex items-center justify-center">
-                      <Bot className="w-8 h-8 text-purple-400" />
+                    <div className="w-12 h-12 rounded-full bg-slate-700 border-3 border-purple-500 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-purple-400" />
                     </div>
                     {getPlayerRole(2) === "Landlord" && (
-                      <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
+                      <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
                         地主
                       </div>
                     )}
                   </div>
-                  <span className="text-sm font-medium text-slate-300">{getPlayerInfo(2).modelName}</span>
+                  <span className="text-xs font-medium text-slate-300">{getPlayerInfo(2).modelName}</span>
                   
                   {/* AI对话气泡 */}
                   {gameState?.gameState?.currentPlayer === 2 && (
@@ -458,15 +458,15 @@ export default function HumanVsAI() {
                   )}
                   
                   {/* 手牌（背面） */}
-                  <div className="flex gap-[-20px]">
+                  <div className="flex">
                     {getPlayerHand(2).map((_, i) => (
                       <PlayingCard
                         key={i}
                         card={{ suit: '', rank: '' }}
                         faceDown
                         disabled
-                        className="w-12 h-18"
-                        style={{ marginLeft: i > 0 ? '-20px' : '0' }}
+                        className="w-10 h-14"
+                        style={{ marginLeft: i > 0 ? '-28px' : '0' }}
                       />
                     ))}
                   </div>
@@ -482,29 +482,29 @@ export default function HumanVsAI() {
                 <motion.div
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-yellow-900/40 border-2 border-yellow-500/50 rounded-lg p-3 flex flex-col items-center"
+                  className="bg-yellow-900/40 border-2 border-yellow-500/50 rounded-lg p-2 flex flex-col items-center"
                 >
-                  <span className="text-xs text-yellow-300 mb-2 font-bold">底牌</span>
-                  <div className="flex gap-2">
+                  <span className="text-xs text-yellow-300 mb-1 font-bold">底牌</span>
+                  <div className="flex gap-1">
                     {gameState.gameState.landlordCards.map((card: any, i: number) => (
                       <PlayingCard
                         key={i}
                         card={{ suit: card.suit, rank: card.rank }}
-                        className="w-12 h-18"
+                        className="w-10 h-14"
                       />
                     ))}
                   </div>
                 </motion.div>
               )}
               
-              <div className="bg-green-800/60 rounded-xl p-8 min-w-[400px] min-h-[200px] flex flex-col items-center justify-center shadow-2xl">
+              <div className="bg-green-800/60 rounded-xl p-6 min-w-[350px] min-h-[160px] flex flex-col items-center justify-center shadow-2xl">
                 {gameState?.gameState?.lastPlayedCards && gameState.gameState.lastPlayedCards.length > 0 ? (
-                  <div className="flex gap-2">
+                  <div className="flex gap-1">
                     {gameState.gameState.lastPlayedCards.map((card: any, i: number) => (
                       <PlayingCard
                         key={i}
                         card={{ suit: card.suit, rank: card.rank }}
-                        className="w-16 h-24"
+                        className="w-14 h-20"
                       />
                     ))}
                   </div>
@@ -529,34 +529,41 @@ export default function HumanVsAI() {
             </div>
             
             {/* 底部人类玩家区域 */}
-            <div className="p-4 space-y-4">
+            <div className="p-3 space-y-3">
               {/* 玩家信息 */}
-              <div className="flex items-center justify-center space-x-4">
+              <div className="flex items-center justify-center space-x-3">
                 <div className="relative">
-                  <div className="w-16 h-16 rounded-full bg-slate-700 border-4 border-green-500 flex items-center justify-center">
-                    <User className="w-8 h-8 text-green-400" />
+                  <div className="w-12 h-12 rounded-full bg-slate-700 border-3 border-green-500 flex items-center justify-center">
+                    <User className="w-6 h-6 text-green-400" />
                   </div>
                   {getPlayerRole(humanPosition) === "Landlord" && (
-                    <div className="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
+                    <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-yellow-500 flex items-center justify-center text-xs font-bold">
                       地主
                     </div>
                   )}
                 </div>
                 <div>
-                  <span className="text-lg font-bold text-white">Human</span>
-                  <div className="text-sm text-slate-400">剩余 {getPlayerHand(humanPosition).length} 张</div>
+                  <span className="text-base font-bold text-white">Human</span>
+                  <div className="text-xs text-slate-400">剩余 {getPlayerHand(humanPosition).length} 张</div>
                 </div>
               </div>
               
-              {/* 扇形手牌展示 */}
-              <div className="flex justify-center items-end min-h-[180px]">
-                <div className="relative flex justify-center" style={{ width: '100%', maxWidth: '1200px', height: '160px' }}>
+              {/* 紧凑型手牌展示 */}
+              <div className="flex justify-center items-end min-h-[140px]">
+                <div className="relative flex justify-center" style={{ width: '100%', maxWidth: '900px', height: '120px' }}>
                   {getPlayerHand(humanPosition).map((card, i) => {
                     const total = getPlayerHand(humanPosition).length;
-                    // 动态调整角度，牌越多角度越小
-                    const maxAngle = Math.min(60, total * 2.5); // 最大角度
-                    const angle = ((i - (total - 1) / 2) / (total - 1)) * maxAngle;
-                    const translateY = Math.abs(i - (total - 1) / 2) * 1.5; // 弧形高度
+                    // 更紧凑的间距计算
+                    const cardWidth = 70; // 卡片宽度
+                    const overlapRatio = 0.35; // 重叠比例，越小越紧凑
+                    const spacing = cardWidth * overlapRatio;
+                    const totalWidth = spacing * (total - 1) + cardWidth;
+                    const startX = (900 - totalWidth) / 2;
+                    
+                    // 轻微的弧形效果
+                    const centerIndex = (total - 1) / 2;
+                    const distanceFromCenter = Math.abs(i - centerIndex);
+                    const arcHeight = distanceFromCenter * 0.8;
                     
                     return (
                       <PlayingCard
@@ -565,11 +572,10 @@ export default function HumanVsAI() {
                         selected={selectedCards.has(`${card.suit}-${card.rank}`)}
                         onClick={() => isHumanTurn && isPlayingPhase && toggleCardSelection(card)}
                         disabled={!isHumanTurn || !isPlayingPhase}
-                        className="absolute bottom-0"
+                        className="absolute bottom-0 transition-all duration-200"
                         style={{
-                          left: `${(i / (total - 1)) * 100}%`,
-                          transform: `translateX(-50%) rotate(${angle}deg) translateY(${translateY}px) ${selectedCards.has(`${card.suit}-${card.rank}`) ? 'translateY(-20px)' : ''}`,
-                          transformOrigin: 'bottom center',
+                          left: `${startX + i * spacing}px`,
+                          transform: `translateY(${selectedCards.has(`${card.suit}-${card.rank}`) ? '-30px' : `${arcHeight}px`})`,
                           zIndex: selectedCards.has(`${card.suit}-${card.rank}`) ? 100 : i,
                         }}
                       />
@@ -579,38 +585,39 @@ export default function HumanVsAI() {
               </div>
               
               {/* 操作按钮 */}
-              <div className="flex justify-center items-center space-x-4">
+              <div className="flex justify-center items-center gap-3 flex-wrap">
                 {isBiddingPhase && isHumanTurn && (
                   <>
-                    <Button onClick={() => handleBid(1)} variant="outline">叫1分</Button>
-                    <Button onClick={() => handleBid(2)} variant="outline">叫2分</Button>
-                    <Button onClick={() => handleBid(3)} variant="outline">叫3分</Button>
-                    <Button onClick={() => handleBid()} variant="ghost">不叫</Button>
+                    <Button onClick={() => handleBid(1)} variant="outline" size="sm">叫1分</Button>
+                    <Button onClick={() => handleBid(2)} variant="outline" size="sm">叫2分</Button>
+                    <Button onClick={() => handleBid(3)} variant="outline" size="sm">叫3分</Button>
+                    <Button onClick={() => handleBid()} variant="ghost" size="sm">不叫</Button>
                   </>
                 )}
                 
                 {isPlayingPhase && isHumanTurn && (
                   <>
-                    <Button onClick={handleHint} variant="outline" className="bg-yellow-500/20 hover:bg-yellow-500/30">
-                      <Lightbulb className="mr-2 h-4 w-4" />
+                    <Button onClick={handleHint} variant="outline" size="sm" className="bg-yellow-500/20 hover:bg-yellow-500/30">
+                      <Lightbulb className="mr-1 h-3 w-3" />
                       HINT
                     </Button>
-                    <Button onClick={handlePass} variant="outline">
+                    <Button onClick={handlePass} variant="outline" size="sm">
                       PASS
                     </Button>
                     <Button 
                       onClick={handlePlay} 
                       disabled={selectedCards.size === 0 || !validation?.valid}
+                      size="sm"
                       className="bg-green-600 hover:bg-green-700"
                     >
-                      <Play className="mr-2 h-4 w-4" />
+                      <Play className="mr-1 h-3 w-3" />
                       PLAY
                     </Button>
                   </>
                 )}
                 
                 {validation && (
-                  <div className={`px-4 py-2 rounded-lg ${validation.valid ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                  <div className={`px-3 py-1 rounded-lg text-sm ${validation.valid ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
                     {validation.message}
                   </div>
                 )}
