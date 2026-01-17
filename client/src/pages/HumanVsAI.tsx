@@ -275,8 +275,15 @@ export default function HumanVsAI() {
       return { valid: false, message: "不是有效牌型" };
     }
     
+    // 检查是否需要压牌
     const lastPlayed = gameState?.gameState?.lastPlayedCards;
-    if (lastPlayed && lastPlayed.length > 0) {
+    const lastPlayer = gameState?.gameState?.lastPlayer;
+    const currentPlayer = gameState?.gameState?.currentPlayer;
+    
+    // 如果是新一轮（当前玩家就是上次出牌的人），不需要压牌
+    const isNewRound = lastPlayer !== null && lastPlayer === currentPlayer;
+    
+    if (lastPlayed && lastPlayed.length > 0 && !isNewRound) {
       const canBeatLast = canBeat(cards, lastPlayed);
       if (!canBeatLast) {
         return { valid: false, message: `${getPatternName(pattern)} - 无法压过上家` };
@@ -550,15 +557,15 @@ export default function HumanVsAI() {
               
               {/* 紧凑型手牌展示 */}
               <div className="flex justify-center items-end min-h-[140px]">
-                <div className="relative flex justify-center" style={{ width: '100%', maxWidth: '900px', height: '120px' }}>
+                <div className="relative flex justify-center" style={{ width: '100%', maxWidth: '1100px', height: '120px' }}>
                   {getPlayerHand(humanPosition).map((card, i) => {
                     const total = getPlayerHand(humanPosition).length;
                     // 更紧凑的间距计算
                     const cardWidth = 70; // 卡片宽度
-                    const overlapRatio = 0.35; // 重叠比例，越小越紧凑
+                    const overlapRatio = 0.5; // 重叠比例，调整为50%确保所有牌可见
                     const spacing = cardWidth * overlapRatio;
                     const totalWidth = spacing * (total - 1) + cardWidth;
-                    const startX = (900 - totalWidth) / 2;
+                    const startX = (1100 - totalWidth) / 2;
                     
                     // 轻微的弧形效果
                     const centerIndex = (total - 1) / 2;
